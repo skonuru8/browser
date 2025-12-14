@@ -1,7 +1,5 @@
-# browser5.py
 import socket, ssl, tkinter, tkinter.font
 
-# -------------------- Networking (Ch.1) --------------------
 class URL:
     def __init__(self, url):
         self.scheme, rest = url.split("://", 1)
@@ -36,7 +34,6 @@ class URL:
         s.close()
         return body
 
-# -------------------- HTML nodes & parser (Ch.4) --------------------
 class Text:
     def __init__(self, text, parent):
         self.text = text
@@ -150,7 +147,6 @@ class HTMLParser:
             parent.children.append(node)
         return self.unfinished.pop()
 
-# -------------------- Fonts & helpers (Ch.3) --------------------
 FONTS = {}
 def get_font(size, weight, style):
     key = (size, weight, style)
@@ -164,7 +160,6 @@ WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
 
-# -------------------- Layout tree (Ch.5) --------------------
 class DocumentLayout:
     def __init__(self, node):
         self.node = node
@@ -315,7 +310,6 @@ BLOCK_ELEMENTS = [
     "legend","details","summary"
 ]
 
-# -------------------- Draw commands (Ch.5) --------------------
 class DrawText:
     def __init__(self, x1, y1, text, font):
         self.top = y1; self.left = x1
@@ -339,7 +333,7 @@ def paint_tree(layout_object, display_list):
     for child in layout_object.children:
         paint_tree(child, display_list)
 
-# -------------------- GUI --------------------
+#  GUI 
 class Browser:
     def __init__(self):
         self.window = tkinter.Tk()
@@ -367,7 +361,7 @@ class Browser:
         self.scroll += SCROLL_STEP
         self.draw()
 
-# -------------------- CLI --------------------
+#  CLI 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 2:
