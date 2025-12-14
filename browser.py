@@ -4,7 +4,6 @@ import tkinter
 import tkinter.font
 
 
-# -------------------- Networking (Ch.1) --------------------
 class URL:
     def __init__(self, url):
         self.scheme, rest = url.split("://", 1)
@@ -51,7 +50,6 @@ class URL:
         return body
 
 
-# -------------------- DOM & HTML parser (Ch.4) --------------------
 class Text:
     def __init__(self, text, parent):
         self.text = text
@@ -202,7 +200,6 @@ class HTMLParser:
         return self.unfinished.pop()
 
 
-# -------------------- CSS parsing (Ch.6) --------------------
 class TagSelector:
     priority = 1
 
@@ -306,7 +303,6 @@ class CSSParser:
         return declarations
 
 
-# -------------------- Style tree (Ch.7) --------------------
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
@@ -454,7 +450,7 @@ def tree_to_links(node):
     if (
         isinstance(node, Element)
         and node.tag == "link"
-        and node.attributes.get("rel", "") == "stylesheet"
+        and node.attributes.get("rel", "").casefold() == "stylesheet"
         and "href" in node.attributes
     ):
         links.append(node.attributes["href"])
@@ -463,7 +459,6 @@ def tree_to_links(node):
     return links
 
 
-# -------------------- Fonts & helpers (Ch.3) --------------------
 FONTS = {}
 
 
@@ -476,7 +471,6 @@ def get_font(size, weight, style_value):
     return FONTS[key][0]
 
 
-# -------------------- Layout tree (Ch.5) --------------------
 class DocumentLayout:
     def __init__(self, node):
         self.node = node
@@ -603,7 +597,6 @@ class BlockLayout:
         return cmds
 
 
-# -------------------- Draw commands (Ch.5) --------------------
 class DrawText:
     def __init__(self, x1, y1, text, font, color):
         self.top = y1
@@ -648,7 +641,6 @@ def paint_tree(layout_object, display_list):
         paint_tree(child, display_list)
 
 
-# -------------------- GUI --------------------
 class Browser:
     def __init__(self):
         self.window = tkinter.Tk()
@@ -690,7 +682,6 @@ class Browser:
         self.draw()
 
 
-# -------------------- CLI --------------------
 USER_AGENT_STYLES = CSSParser(
     """
     html, body { display: block; }
