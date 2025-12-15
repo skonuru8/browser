@@ -2222,9 +2222,45 @@ class Browser:
         self.window.bind("<Command-Right>", lambda e: next_tab())
         self.window.bind("<Command-Left>",  lambda e: prev_tab())
 
+        # Copy page text: Ctrl/Cmd+C copies visible page text to the clipboard
+        def copy_page(e=None):
+            try:
+                text = self._gather_text(self.current_tab().nodes)
+                # Clear and append to clipboard
+                self.window.clipboard_clear()
+                self.window.clipboard_append(text)
+            except Exception:
+                pass
+            # do not propagate to default handler (e.g., OS copy of UI controls)
+            return "break"
+        self.window.bind("<Control-c>", lambda e: copy_page())
+        self.window.bind("<Command-c>", lambda e: copy_page())
+
     #  tabs 
     def current_tab(self) -> Tab:
         return self.tabs[self.active_tab_index]
+
+    def _gather_text(self, node) -> str:
+        """
+        Recursively collect visible text from the DOM tree rooted at `node`.
+        Ignores script and style contents (already filtered in the parser).
+        Inserts line breaks between block-level elements to improve readability.
+        """
+        out = ""
+        if isinstance(node, Text):
+            out += node.text
+        elif isinstance(node, Element):
+            # Determine whether this element is considered block-level
+            is_block = node.tag in BLOCK_ELEMENTS or node.tag in ("br",)
+            for child in node.children:
+                out += self._gather_text(child)
+            # Add newline after block elements to separate paragraphs
+            if is_block:
+                out += "\n"
+        else:
+            for child in getattr(node, "children", []):
+                out += self._gather_text(child)
+        return out
 
     def new_tab(self, url: URL):
         tab = Tab(self)
@@ -2234,6 +2270,14 @@ class Browser:
         if url:
             tab.navigate(url)
         self.draw()
+        # Give focus to the canvas by default when opening a new tab.
+        # Without this, the address bar retains focus and keystrokes go
+        # there rather than to the page. Focusing the canvas makes
+        # arrow keys and other keys interact with the page content.
+        try:
+            self.canvas.focus_set()
+        except Exception:
+            pass
 
     def switch_tab(self, idx: int):
         if 0 <= idx < len(self.tabs):
@@ -2299,10 +2343,19 @@ class Browser:
             return  # don’t forward to page content when clicking the track
 
         # Existing page-click behavior
+        # Clear selection and blur focus from the address bar
         self.address.selection_clear()
         self.address.icursor("end")
         self.chrome_ctl.blur()
         self.current_tab().blur()
+        # Move focus to the canvas so that subsequent keypresses
+        # interact with the page instead of the address bar. This
+        # allows scrolling, typing into focused inputs, etc.
+        try:
+            self.canvas.focus_set()
+        except Exception:
+            pass
+        # Dispatch click to the current tab for hit testing
         self.current_tab().click(e.x, e.y)
         self.draw()
 
