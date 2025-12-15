@@ -346,7 +346,7 @@ class CSSParser:
     """
     A very small CSS parser used for parsing author style sheets. It
     supports tag and descendant selectors, and property/value pairs. The
-    parser skips malformed rules and continues parsing.
+    parser skips malformed rules and continues parsing
     """
     def __init__(self, s: str) -> None:
         self.s = s
@@ -602,17 +602,38 @@ class BlockLayout:
                 for c in node.children:
                     self.recurse(c)
 
-    def word(self, node, word):
-        weight = node.style["font-weight"]
-        style = node.style["font-style"]
-        if style == "normal": style = "roman"
-        size = int(float(node.style["font-size"][:-2]) * .75)
+    def word(self, node, word) -> None:
+        """
+        Add a single word to the current line.
+
+        This method computes the appropriate font and colour from the
+        node's computed style, measures the word's width, and appends it
+        to the current line buffer.  When a word would overflow the
+        available width, the current line is flushed before adding it.
+        The node itself is recorded so that hyperlink hit‑testing can
+        associate rendered text back to the underlying DOM element.
+        """
+        # Determine font characteristics from CSS style
+        weight = node.style.get("font-weight", "normal")
+        style = node.style.get("font-style", "normal")
+        if style == "normal":
+            style = "roman"
+        # Convert pixel font size to points (approx. 0.75×)
+        size_value = node.style.get("font-size", INHERITED_PROPERTIES["font-size"])
+        try:
+            px = float(size_value[:-2])
+        except Exception:
+            px = float(INHERITED_PROPERTIES["font-size"][:-2])
+        size = int(px * 0.75)
         font = get_font(size, weight, style)
-        color = node.style["color"]
+        color = node.style.get("color", "black")
         w = font.measure(word)
-        if self.cursor_x + w > self.width:
+        # If adding this word would overflow the line, start a new one
+        if self.cursor_x + w > self.width and self.line:
             self.flush()
-        self.line.append(("text", self.cursor_x, word, font, color))
+        # Store kind, relative X offset, word, font, colour, and DOM node
+        self.line.append(("text", self.cursor_x, word, font, color, node))
+        # Advance cursor by the word's width plus a space
         self.cursor_x += w + font.measure(" ")
 
     def input(self, node):
@@ -686,16 +707,39 @@ class BlockLayout:
             return node.children[0].text
         return ""
 
-    def flush(self):
-        if not self.line: return
-        metrics = [font.metrics() for _, _, _, font, _ in self.line]
+    def flush(self) -> None:
+        """
+        Flush the current line of inline content.
+
+        This computes a baseline from the maximum ascent of all words on
+        the line, computes absolute positions for each word, and appends
+        them to the display list.  It also registers hyperlink bounding
+        boxes for hit‑testing when the word belongs to an anchor
+        element (or is a descendant of one).
+        """
+        if not self.line:
+            return
+        # Compute baseline from maximum ascent/descent of all fonts in this line
+        metrics = [itm[3].metrics() for itm in self.line]  # itm structure: (kind, rel_x, word, font, color, node)
         max_ascent = max(m["ascent"] for m in metrics)
         max_descent = max(m["descent"] for m in metrics)
         baseline = self.cursor_y + max_ascent
-        for kind, rel_x, word, font, color in self.line:
+        for kind, rel_x, word, font, color, node in self.line:
             x = self.x + rel_x
             y = self.y + baseline - font.metrics("ascent")
+            # Append to display list using the existing format
             self.display_list.append(("text_abs", (x, y), word, font, color))
+            # Register a hit‑box for anchor elements
+            # Walk up the DOM tree to find enclosing <a> element
+            link = node
+            while link and not (isinstance(link, Element) and link.tag == "a"):
+                link = link.parent
+            if link and "href" in link.attributes:
+                width = font.measure(word)
+                height = font.metrics("linespace")
+                rect = (x, y, x + width, y + height)
+                Browser._register_widget_box(link, rect)
+        # Advance y cursor by line height (baseline + descent) and reset x
         self.cursor_y = baseline + int(1.25 * max_descent)
         self.cursor_x = 0
         self.line = []
@@ -750,15 +794,13 @@ class BlockLayout:
 # In this simplified browser implementation, inline words and widgets are managed
 # directly by BlockLayout using a display list. These classes are therefore
 # minimal stubs: they store child nodes and compute sizes, but do not change
-# the rendering behaviour. They ensure that the names used in the book’s
-# outlines exist so that scripts referring to them do not crash.
+# the rendering behaviour.
 
 class LineLayout:
     """
     Represents a single line of inline content. Each line lays out its
     children horizontally and computes a baseline so that text aligns
-    properly. This implementation follows the Web Browser Engineering
-    reference design: it spans the full width of its parent block, stacks
+    properly. This implementation spans the full width of its parent block, stacks
     vertically below the previous line, and positions its child layout
     objects (TextLayout or InputLayout) accordingly.
     """
@@ -993,9 +1035,10 @@ class DrawOutline:
                                 outline=self.color, width=self.thickness)
 
 #  JavaScript runtime & context 
-# The following strings define a minimal DOM-like API implemented in JS.
-# They expose methods such as Node.children, document.createElement,
-# appendChild, insertBefore, removeChild, and event bubbling with
+# The following strings define a minimal DOM-like API implemented in
+# JavaScript. They expose methods
+# such as Node.children, document.createElement, appendChild,
+# insertBefore, removeChild, and event bubbling with
 # stopPropagation. The Python functions registered with DukPy
 # provide the backing functionality for these methods.
 RUNTIME_JS = """
@@ -1176,7 +1219,7 @@ class JSContext:
         # Track id variables defined in JS
         self.id_vars: list[str] = []
 
-    # ----- handle management -----
+    #  handle management 
     def get_handle(self, elt) -> int:
         """Return a stable handle for a Python node, creating one if needed."""
         if elt not in self.node_to_handle:
@@ -1185,7 +1228,7 @@ class JSContext:
             self.handle_to_node[h] = elt
         return self.node_to_handle[elt]
 
-    # ----- exported functions -----
+    #  exported functions 
     def querySelectorAll(self, selector_text: str) -> list[int]:
         # Return handles for all nodes matching a CSS selector.
         try:
@@ -1362,7 +1405,7 @@ class JSContext:
             return self.get_handle(node.parent)
         return -1
 
-    # ----- high-level operations -----
+    #  high-level operations 
     def update_ids(self) -> None:
         """Update global variables in the JS interpreter for element IDs."""
         if dukpy is None:
@@ -1391,8 +1434,7 @@ class JSContext:
 
     def run(self, script: str, code: str | None = None) -> None:
         """
-        Execute JavaScript code in this context. For compatibility with the
-        book’s outline, this method accepts two parameters (script and code).
+        Execute JavaScript code in this context. This method accepts two parameters (script and code).
         When both are provided, the second parameter takes precedence; when
         only one is provided, it is treated as the code to execute. Any
         exceptions from the JS interpreter are printed but otherwise ignored
@@ -1419,7 +1461,7 @@ class JSContext:
             return False
         return not bool(do_default)
 
-    # ----- XMLHttpRequest API -----
+    #  XMLHttpRequest API 
     def XMLHttpRequest_send(self, method: str, url: str, body: str | None):
         """
         Handle an XMLHttpRequest from JavaScript. Supports only synchronous
@@ -1461,7 +1503,7 @@ class JSContext:
                 raise Exception("Cross-origin XHR request not allowed")
         return out
 
-    # ----- Cookie API for document.cookie -----
+    #  Cookie API for document.cookie 
     def get_cookie(self) -> str:
         """
         Return a string representation of cookies for the current tab's origin.
@@ -1757,7 +1799,7 @@ class Tab:
     def scrollup(self, step=SCROLL_STEP):
         self.scroll -= step; self.clamp_scroll()
 
-    # ---- input focus, typing, clicking ----
+    #  input focus, typing, clicking 
     def click(self, x, y):
         doc_y = y + self.scroll
         elt = Browser._hit_widget(x, doc_y)
@@ -1773,36 +1815,49 @@ class Tab:
                 except Exception:
                     prevent = False
                 if prevent:
-                    # JS cancelled default
+                    # JS cancelled default behaviour
                     self.apply_styles_and_render()
                     return
-            if elt.tag == "input":
+            # Handle anchor navigation before other element types
+            if isinstance(elt, Element) and elt.tag == "a" and "href" in elt.attributes:
+                # Resolve relative URL against current page URL
+                try:
+                    new_url = self.url.resolve(elt.attributes["href"]) if isinstance(self.url, URL) else URL(elt.attributes["href"])
+                except Exception:
+                    new_url = None
+                if new_url:
+                    self.navigate(new_url)
+                    return
+            # Handle input elements (checkboxes and text inputs)
+            if isinstance(elt, Element) and elt.tag == "input":
                 # checkbox click toggles; text input focuses
-                if elt.attributes.get("type","text").lower() == "checkbox":
+                itype = elt.attributes.get("type", "text").lower()
+                if itype == "checkbox":
                     # toggle internal checked state
                     if ("checked" in elt.attributes) or (elt.attributes.get("_checked_state") == "true"):
-                        # uncheck
-                        if "checked" in elt.attributes: del elt.attributes["checked"]
+                        if "checked" in elt.attributes:
+                            del elt.attributes["checked"]
                         elt.attributes["_checked_state"] = "false"
                     else:
                         elt.attributes["_checked_state"] = "true"
                     # Rerender after toggle
                     self.apply_styles_and_render()
                     return
-                # text input focus & clear
+                # text input: focus and clear
                 elt.attributes["value"] = ""
                 self.focus = elt
                 elt.is_focused = True
                 self.apply_styles_and_render()
                 return
-            elif elt.tag == "button":
+            # Handle button clicks: submit enclosing form
+            if isinstance(elt, Element) and elt.tag == "button":
                 form = elt.parent
                 while form and not (isinstance(form, Element) and form.tag == "form"):
                     form = form.parent
                 if form:
                     self.submit_form(form)
                     return
-
+        # Default: re-render page without any action
         self.apply_styles_and_render()
 
     def keypress(self, char):
@@ -1886,7 +1941,7 @@ class Tab:
             self.focus.is_focused = False
             self.focus = None
 
-    # -------- script/style processing --------
+    #  script/style processing 
     def process_scripts_and_styles(self) -> None:
         """
         Scan the current DOM for <script> and <link rel="stylesheet"> tags.
@@ -2039,13 +2094,13 @@ class Browser:
         self.window = tkinter.Tk()
         self.chrome_ctl = Chrome(self)
 
-        # --- tab strip ---
+        #  tab strip 
         self.tabbar = tkinter.Frame(self.window, bg="#e6e6e6")
         self.tabbar.pack(fill="x")
         self.tabs = []
         self.active_tab_index = 0
 
-        # --- chrome bar ---
+        #  chrome bar 
         self.chrome = tkinter.Frame(self.window)
         self.back_btn  = tkinter.Button(self.chrome, text="◀", width=2, command=self.go_back)
         self.fwd_btn   = tkinter.Button(self.chrome, text="▶", width=2, command=self.go_forward)
@@ -2072,12 +2127,12 @@ class Browser:
         self._scroll_velocity = 0.0
         self._scroll_animating = False
 
-        # --- canvas ---
+        #  canvas 
         self.canvas = tkinter.Canvas(self.window, width=WIDTH, height=HEIGHT,
                                      background="white", highlightthickness=0)
         self.canvas.pack()
 
-        # --- status ---
+        #  status 
         self.status = tkinter.Label(self.window, text="", anchor="w")
         self.status.pack(fill="x")
 
@@ -2099,7 +2154,7 @@ class Browser:
         self._bind_accels()
 
         # first tab
-        self.new_tab(URL("https://browser.engineering/chrome.html"))
+        self.new_tab(URL("http://www.textfiles.com/"))
 
     def update_padlock(self) -> None:
         """
@@ -2119,7 +2174,7 @@ class Browser:
         else:
             self.padlock.config(text="")
 
-    # -------- accelerators --------
+    #  accelerators 
     def _bind_accels(self):
         def bind_combo(key, handler):
             self.window.bind(f"<Control-{key}>", handler)
@@ -2138,7 +2193,7 @@ class Browser:
         self.window.bind("<Command-Right>", lambda e: next_tab())
         self.window.bind("<Command-Left>",  lambda e: prev_tab())
 
-    # -------- tabs --------
+    #  tabs 
     def current_tab(self) -> Tab:
         return self.tabs[self.active_tab_index]
 
@@ -2193,7 +2248,7 @@ class Browser:
                               command=lambda: self.new_tab(URL("https://example.org/")))
         plus.pack(side="left", padx=4, pady=2)
 
-    # -------- focus & events --------
+    #  focus & events 
     def handle_click(self, e):
         # Scrollbar hit-test first
         track_left = WIDTH - SCROLLBAR_WIDTH
@@ -2258,7 +2313,7 @@ class Browser:
             # enter in page is handled by Tab.keypress
             pass
 
-    # -------- chrome actions --------
+    #  chrome actions 
     def set_status(self, msg): self.status.config(text=msg)
 
     def go_address(self):
@@ -2274,7 +2329,7 @@ class Browser:
     def go_forward(self):self.current_tab().go_forward()
     def reload(self):    self.current_tab().reload()
 
-    # -------- scrolling --------
+    #  scrolling 
     def scroll_active(self, delta):
         tab = self.current_tab()
         if delta >= 0: tab.scrolldown(delta)
@@ -2324,7 +2379,7 @@ class Browser:
         self.window.after(16, self._scroll_tick)
 
 
-    # -------- painting --------
+    #  painting 
     def draw(self):
         tab = self.current_tab()
         self.canvas.delete("all")
