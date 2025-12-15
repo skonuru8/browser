@@ -285,11 +285,32 @@ class HTMLParser:
                 break
 
     def add_text(self, text):
-        if text.isspace(): return
+        """Add a text node to the current parent element.
+
+        In addition to ignoring whitespace-only text, this method
+        suppresses any text that appears inside <script> or <style>
+        elements. Modern web applications frequently embed large
+        blobs of JavaScript and JSON data within these tags; if we
+        naively turn that data into visible text nodes it renders as
+        unreadable code in our simplified browser. To avoid this,
+        walk up the stack of unfinished elements and skip creating
+        a text node if any ancestor is a script or style tag.
+        """
+        # Ignore purely whitespace text
+        if text.isspace():
+            return
+        # If any unfinished element is a <script> or <style> tag,
+        # skip adding this text. This prevents script contents from
+        # being rendered as part of the page.
+        for ancestor in self.unfinished:
+            if isinstance(ancestor, Element) and ancestor.tag in ("script", "style"):
+                return
+        # Ensure implicit tags like <html> and <body> exist
         self.implicit_tags(None)
         parent = self.unfinished[-1] if self.unfinished else None
         if parent is None:
-            self.implicit_tags(None); parent = self.unfinished[-1]
+            self.implicit_tags(None)
+            parent = self.unfinished[-1]
         node = Text(text, parent)
         parent.children.append(node)
 
@@ -448,6 +469,14 @@ DEFAULT_STYLE_SHEET = [
                              "background-color": "lightblue", "color": "black"}),
     (TagSelector("button"), {"font-size": "16px", "font-weight": "normal", "font-style": "normal",
                              "background-color": "orange", "color": "black"}),
+
+    # Hide script and style contents from rendering. Without this,
+    # the browser would attempt to lay out their contents, which are
+    # usually JavaScript or CSS code that shouldn't be visible on
+    # the page. Setting display to none effectively removes them
+    # from the layout tree.
+    (TagSelector("script"), {"display": "none"}),
+    (TagSelector("style"), {"display": "none"}),
     (TagSelector("i"),    {"font-style": "italic"}),
     (TagSelector("b"),    {"font-weight": "bold"}),
     (TagSelector("small"),{"font-size": "90%"}),
