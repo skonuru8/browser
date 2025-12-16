@@ -1,25 +1,16 @@
 import sys
 import ctypes
-import dukpy
 import math
 import sdl2
 import skia
-import socket
-import ssl
-import urllib.parse
 import tools
-from browser import WIDTH, HEIGHT, HSTEP, VSTEP, SCROLL_STEP
-from browser import print_tree, HTMLParser
-from browser import BLOCK_ELEMENTS
-from browser import CSSParser, TagSelector, DescendantSelector
-from browser import INHERITED_PROPERTIES, style, cascade_priority
-from browser import DrawText, tree_to_list
-from browser import DrawLine, DrawOutline, DrawRect
+
+from browser import WIDTH, HEIGHT, VSTEP, SCROLL_STEP
+from browser import style, cascade_priority
+from browser import DrawText, DrawLine, DrawOutline, DrawRect
 from browser import Text, Element, BlockLayout, InputLayout
 from browser import Browser, LineLayout, TextLayout, DocumentLayout, Chrome
-from browser import DEFAULT_STYLE_SHEET, INPUT_WIDTH_PX
-from browser import RUNTIME_JS, EVENT_DISPATCH_JS
-from browser import COOKIE_JAR, URL, JSContext, Tab
+from browser import DEFAULT_STYLE_SHEET, INPUT_WIDTH_PX, URL, Tab
 
 FONTS = {}
 
@@ -199,15 +190,27 @@ class DrawRRect:
         canvas.drawRRect(self.rrect, paint)
 
 def paint_tree(layout_object, display_list):
-    cmds = []
-    if layout_object.should_paint():
-        cmds = layout_object.paint()
-    for child in layout_object.children:
-        paint_tree(child, cmds)
+    """Depth-first paint traversal.
 
-    if layout_object.should_paint():
+    If a node paints (should_paint True), we collect its subtree commands into a
+    local list so that visual effects (opacity/overflow) can wrap the subtree.
+
+    If a node does *not* paint, its children must paint directly into the
+    parent's list (display_list), otherwise the subtree gets dropped and you see
+    a white page.
+    """
+    should = getattr(layout_object, "should_paint", None)
+    paints = should() if callable(should) else (not isinstance(layout_object, DocumentLayout))
+
+    if paints:
+        cmds = layout_object.paint()
+        for child in layout_object.children:
+            paint_tree(child, cmds)
         cmds = layout_object.paint_effects(cmds)
-    display_list.extend(cmds)
+        display_list.extend(cmds)
+    else:
+        for child in getattr(layout_object, "children", []):
+            paint_tree(child, display_list)
 
 @tools.patch(BlockLayout)
 class BlockLayout:
@@ -221,7 +224,7 @@ class BlockLayout:
             self.x + self.width, self.y + self.height)
 
     def paint(self):
-        cmds = []
+        cmds = [] 
 
         # Background (with optional border-radius)
         bgcolor = self.node.style.get("background-color", "transparent")
@@ -325,6 +328,8 @@ class TextLayout:
 
     def paint(self):
         cmds = []
+        metrics = self.font.getMetrics()
+        baseline_adjust = -metrics.fAscent  # ascent is negative
         color = self.node.style["color"]
         cmds.append(
             DrawText(self.x, self.y, self.word, self.font, color))
@@ -429,6 +434,11 @@ class Tab:
         for cmd in self.display_list:
             cmd.execute(canvas)
 
+
+    def clamp_scroll(self):
+        # In the Skia UI, only the content area is scrollable (below chrome).
+        viewport = HEIGHT - self.browser.chrome.bottom
+        self.scroll = max(0, min(self.scroll, max(0, self.doc_height - viewport)))
     @tools.delete
     def draw(self, canvas, offset): pass
 
@@ -471,56 +481,155 @@ class Chrome:
 
         self.bottom = self.urlbar_bottom
 
+    def _tab_display_title(self, tab):
+        """
+        Return a truncated title for display on a tab. Long titles are
+        abbreviated with an ellipsis to avoid tabs becoming excessively
+        wide. A maximum number of characters is enforced to cap the tab
+        width. If no title is set on the Tab object, fall back to the
+        host name or "New Tab".
+        """
+        # Prefer the tab's title; if absent, use the URL host
+        raw_title = getattr(tab, 'title', None) or getattr(tab, 'url', None)
+        if not raw_title:
+            return "New Tab"
+        if isinstance(raw_title, str):
+            title = raw_title
+        else:
+            # If it's a URL object, convert to host string
+            title = getattr(raw_title, 'host', None) or str(raw_title)
+        # Truncate to a sensible length for tab display
+        max_chars = 20
+        if len(title) > max_chars:
+            return title[:max_chars - 1] + "…"
+        else:
+            return title
+
+    def _tab_icon_char(self, tab):
+        """
+        Determine a one‑character icon for a tab. Use the first
+        alphanumeric character of the tab's title, uppercased. If none
+        exists, fall back to a default symbol.
+        """
+        title = getattr(tab, 'title', None) or ''
+        if title:
+            # Find the first alphanumeric character
+            for ch in title:
+                if ch.isalnum():
+                    return ch.upper()
+        return '●'
+
+    def _tab_width(self, tab):
+        """
+        Compute the width of a tab based on its display title, icon, and
+        close button. Includes padding between elements. A small extra
+        margin is added to improve legibility.
+        """
+        display_title = self._tab_display_title(tab)
+        icon_char = self._tab_icon_char(tab)
+        # Measure individual components
+        title_width = self.font.measureText(display_title)
+        icon_width = self.font.measureText(icon_char)
+        close_width = self.font.measureText("×")
+        # Internal spacing between icon, title and close button
+        inter_pad = self.padding
+        # Outer padding at left and right edges
+        outer_pad = self.padding
+        # Total width: outer padding + icon + space + title + space + close + outer padding
+        width = outer_pad + icon_width + inter_pad + title_width + inter_pad + close_width + outer_pad
+        # Impose a minimum width to avoid very narrow tabs
+        min_width = self.font.measureText("WWW") + 6 * self.padding
+        return max(width, min_width)
+
     def tab_rect(self, i):
+        """
+        Compute the bounding rectangle for the i‑th tab. The width of
+        each tab is dynamic, based on its content, so this sums the
+        widths of all prior tabs to determine the left edge. The y
+        coordinates are fixed by the tab bar dimensions.
+        """
+        # Starting x coordinate after the new tab button
         tabs_start = self.newtab_rect.right() + self.padding
-        tab_width = self.font.measureText("Tab X") + 2*self.padding
-        return skia.Rect.MakeLTRB(
-            tabs_start + tab_width * i, self.tabbar_top,
-            tabs_start + tab_width * (i + 1), self.tabbar_bottom)
+        x_left = tabs_start
+        # Sum widths of prior tabs
+        for j in range(i):
+            x_left += self._tab_width(self.browser.tabs[j])
+        # Width of this tab
+        width = self._tab_width(self.browser.tabs[i])
+        x_right = x_left + width
+        return skia.Rect.MakeLTRB(x_left, self.tabbar_top, x_right, self.tabbar_bottom)
 
     def paint(self):
         cmds = []
+        # Draw a horizontal line under the chrome
         cmds.append(DrawLine(
             0, self.bottom, WIDTH,
             self.bottom, "black", 1))
 
+        # Baseline adjustment for font; compute once here
+        metrics = self.font.getMetrics()
+        baseline_adjust = -metrics.fAscent  # ascent is negative
+
+        # Draw the "+" new tab button
         cmds.append(DrawOutline(self.newtab_rect, "black", 1))
         cmds.append(DrawText(
             self.newtab_rect.left() + self.padding,
-            self.newtab_rect.top(),
+            self.newtab_rect.top() + self.padding + baseline_adjust,
             "+", self.font, "black"))
 
+        # Draw each tab with dynamic width, background, icon, title, and close button
         for i, tab in enumerate(self.browser.tabs):
             bounds = self.tab_rect(i)
+            # Background fill: lighter for inactive tabs, highlighted for active
+            if tab == self.browser.active_tab:
+                bg_color = "lightblue"
+            else:
+                bg_color = "lightgreen"
+            cmds.append(DrawRect(bounds, bg_color))
+            # Left and right separators
             cmds.append(DrawLine(
                 bounds.left(), 0, bounds.left(), bounds.bottom(),
                 "black", 1))
             cmds.append(DrawLine(
                 bounds.right(), 0, bounds.right(), bounds.bottom(),
                 "black", 1))
-            cmds.append(DrawText(
-                bounds.left() + self.padding, bounds.top() + self.padding,
-                "Tab {}".format(i), self.font, "black"))
-
+            # Determine positions for icon, title, and close button
+            x = bounds.left() + self.padding
+            y = bounds.top() + self.padding + baseline_adjust
+            # Draw icon
+            icon_char = self._tab_icon_char(tab)
+            cmds.append(DrawText(x, y, icon_char, self.font, "black"))
+            x += self.font.measureText(icon_char) + self.padding
+            # Draw title
+            title = self._tab_display_title(tab)
+            cmds.append(DrawText(x, y, title, self.font, "black"))
+            x += self.font.measureText(title) + self.padding
+            # Draw close button
+            cmds.append(DrawText(x, y, "×", self.font, "black"))
+            # For active tab: draw bottom line across unused area outside tab
             if tab == self.browser.active_tab:
+                # Left segment of bottom line
                 cmds.append(DrawLine(
                     0, bounds.bottom(), bounds.left(), bounds.bottom(),
                     "black", 1))
+                # Right segment of bottom line
                 cmds.append(DrawLine(
                     bounds.right(), bounds.bottom(), WIDTH, bounds.bottom(),
                     "black", 1))
 
+        # Back button
         cmds.append(DrawOutline(self.back_rect, "black", 1))
         cmds.append(DrawText(
             self.back_rect.left() + self.padding,
-            self.back_rect.top(),
+            self.back_rect.top() + baseline_adjust,
             "<", self.font, "black"))
 
+        # Address bar
         cmds.append(DrawOutline(self.address_rect, "black", 1))
         if self.focus == "address bar":
             cmds.append(DrawText(
                 self.address_rect.left() + self.padding,
-                self.address_rect.top(),
+                self.address_rect.top() + baseline_adjust,
                 self.address_bar, self.font, "black"))
             w = self.font.measureText(self.address_bar)
             cmds.append(DrawLine(
@@ -533,33 +642,58 @@ class Chrome:
             url = str(self.browser.active_tab.url)
             cmds.append(DrawText(
                 self.address_rect.left() + self.padding,
-                self.address_rect.top(),
+                self.address_rect.top() + baseline_adjust,
                 url, self.font, "black"))
 
         return cmds
 
     def click(self, x, y):
         self.focus = None
+        # Click on the new tab button opens a fresh tab
         if self.newtab_rect.contains(x, y):
             self.browser.new_tab(URL("https://browser.engineering/"))
-        elif self.back_rect.contains(x, y):
-            self.browser.active_tab.go_back()
+            return
+        # Click on the back button navigates history backward
+        if self.back_rect.contains(x, y):
+            if self.browser.active_tab:
+                self.browser.active_tab.go_back()
+            # Re‑raster chrome and tab surfaces to reflect navigation
             self.browser.raster_chrome()
-            self.browser.raster_tab()
+            if self.browser.active_tab:
+                self.browser.raster_tab()
             self.browser.draw()
-        elif self.address_rect.contains(x, y):
+            return
+        # Click inside address bar focuses it
+        if self.address_rect.contains(x, y):
             self.focus = "address bar"
             self.address_bar = ""
-        else:
-            for i, tab in enumerate(self.browser.tabs):
-                if self.tab_rect(i).contains(x, y):
+            return
+        # Otherwise handle clicks on tabs: either activate or close
+        # Iterate through each tab and check if the click is within its rect
+        tabs = list(self.browser.tabs)
+        for i, tab in enumerate(tabs):
+            bounds = self.tab_rect(i)
+            if bounds.contains(x, y):
+                # Determine if click is on the close button region
+                close_width = self.font.measureText("×")
+                outer_pad = self.padding
+                close_left = bounds.right() - (outer_pad + close_width)
+                if x >= close_left:
+                    # Close this tab
+                    self.browser.close_tab(i)
+                    return
+                else:
+                    # Activate this tab
                     self.browser.active_tab = tab
+                    self.browser.active_tab_index = i
                     break
+        # Re‑raster the current tab (useful when switching)
+        if self.browser.active_tab:
             self.browser.raster_tab()
 
     def enter(self):
         if self.focus == "address bar":
-            self.browser.active_tab.load(URL(self.address_bar))
+            self.browser.active_tab.navigate(URL(self.address_bar))
             self.focus = None
             self.browser.focus = None
 
@@ -700,6 +834,55 @@ class Browser:
         self.active_tab.scrolldown()
         self.draw()
 
+    def handle_up(self):
+        """
+        Scroll the current page up by one scroll step and redraw. Mirrors
+        handle_down() but scrolls in the opposite direction. Without this,
+        users cannot move back up a page once they have scrolled down. This
+        simply delegates to Tab.scrollup() and then triggers a redraw.
+        """
+        if self.active_tab:
+            # Use the browser-level SCROLL_STEP constant for consistency
+            self.active_tab.scrollup()
+            self.draw()
+
+    def handle_scroll(self, dy: float):
+        """Scroll the active tab by a pixel delta (positive = down)."""
+        if not self.active_tab:
+            return
+        self.active_tab.scroll += dy
+        self.active_tab.clamp_scroll()
+        self.draw()
+
+    def close_tab(self, idx: int):
+        """
+        Close the tab at the given index. If only one tab remains this
+        function will simply return without destroying the window. After
+        removal the active_tab and active_tab_index are updated and the
+        chrome and tab surfaces are re‑rasterized. A redraw is triggered
+        to reflect the change. This mirrors the Tkinter version in
+        browser.py but omits widget management.
+        """
+        if idx < 0 or idx >= len(self.tabs):
+            return
+        # If this is the last tab, do nothing rather than closing the window
+        if len(self.tabs) == 1:
+            return
+        del self.tabs[idx]
+        # Adjust the active tab index if necessary
+        if self.active_tab_index > idx:
+            self.active_tab_index -= 1
+        # Clamp the active tab index
+        if self.active_tab_index >= len(self.tabs):
+            self.active_tab_index = len(self.tabs) - 1
+        # Update the active_tab reference
+        self.active_tab = self.tabs[self.active_tab_index] if self.tabs else None
+        # Raster surfaces to reflect removal
+        self.raster_chrome()
+        if self.active_tab:
+            self.raster_tab()
+        self.draw()
+
     def new_tab(self, url):
         # Create a real Tab bound to this Browser (not a numeric height).
         new_tab = Tab(self)
@@ -794,6 +977,15 @@ def mainloop(browser):
                     browser.handle_enter()
                 elif event.key.keysym.sym == sdl2.SDLK_DOWN:
                     browser.handle_down()
+                elif event.key.keysym.sym == sdl2.SDLK_UP:
+                    # Scroll up when the up arrow is pressed
+                    browser.handle_up()
+            elif event.type == sdl2.SDL_MOUSEWHEEL:
+                # SDL: positive y = wheel up. Convert to pixel scroll.
+                # Trackpads can generate small fractional-ish values; scale and clamp.
+                dy = -event.wheel.y * SCROLL_STEP
+                if dy != 0:
+                    browser.handle_scroll(dy)
             elif event.type == sdl2.SDL_TEXTINPUT:
                 browser.handle_key(event.text.text.decode('utf8'))
 
@@ -803,4 +995,3 @@ if __name__ == "__main__":
     browser.new_tab(URL(sys.argv[1]))
     browser.draw()
     mainloop(browser)
-
