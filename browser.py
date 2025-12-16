@@ -486,12 +486,39 @@ DEFAULT_STYLE_SHEET = [
 #  Fonts & layout 
 FONTS = {}
 def get_font(size, weight, style):
+    """Return a font object with a measureText() method.
+
+    In the SDL/Skia (lab11) browser, we prefer Skia fonts (no Tk root required).
+    We keep a small cache in FONTS keyed by (size, weight, style).
+    """
     key = (size, weight, style)
-    if key not in FONTS:
-        font = tkinter.font.Font(size=size, weight=weight, slant=style)
-        label = tkinter.Label(font=font)
-        FONTS[key] = (font, label)
-    return FONTS[key][0]
+    if key in FONTS:
+        return FONTS[key]
+
+    # Prefer Skia if available (lab11 path).
+    try:
+        import skia
+        # Map CSS-like weight/style to Skia FontStyle.
+        sk_weight = skia.FontStyle.kBold_Weight if str(weight).lower() in ("bold", "700", "800", "900") else skia.FontStyle.kNormal_Weight
+        sk_slant = skia.FontStyle.kItalic_Slant if str(style).lower() in ("italic", "oblique") else skia.FontStyle.kUpright_Slant
+        font_style = skia.FontStyle(sk_weight, skia.FontStyle.kNormal_Width, sk_slant)
+        typeface = skia.Typeface('Times', font_style)
+        font = skia.Font(typeface, float(size))
+        FONTS[key] = font
+        return font
+    except Exception:
+        pass
+
+    # Fallback to Tk fonts (only if someone runs the Tk browser).
+    import tkinter
+    import tkinter.font
+    if not tkinter._default_root:
+        root = tkinter.Tk()
+        root.withdraw()
+    font = tkinter.font.Font(size=int(size), weight=weight, slant=style)
+    FONTS[key] = font
+    return font
+
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
@@ -2398,7 +2425,6 @@ class Browser:
     #  chrome actions 
     def set_status(self, msg):
         """Update UI status text if available.
-
         In the SDL/Skia labs, Browser.__init__ is patched and no Tk widgets
         are created; in that case we simply store the status string.
         """
