@@ -486,39 +486,56 @@ DEFAULT_STYLE_SHEET = [
 #  Fonts & layout 
 FONTS = {}
 def get_font(size, weight, style):
-    """Return a font object with a measureText() method.
+    """Return a font object with a stable API across backends.
 
-    In the SDL/Skia (lab11) browser, we prefer Skia fonts (no Tk root required).
-    We keep a small cache in FONTS keyed by (size, weight, style).
+    The layout engine expects:
+      - font.measure(text) -> width in px
+      - font.metrics(key) -> ascent/descent/linespace (px)
+      - font.metrics() -> dict with those keys
     """
     key = (size, weight, style)
     if key in FONTS:
         return FONTS[key]
 
-    # Prefer Skia if available (lab11 path).
+    # Prefer Skia fonts (Lab 11 SDL/Skia). Fall back to Tk fonts if present.
     try:
         import skia
-        # Map CSS-like weight/style to Skia FontStyle.
-        sk_weight = skia.FontStyle.kBold_Weight if str(weight).lower() in ("bold", "700", "800", "900") else skia.FontStyle.kNormal_Weight
-        sk_slant = skia.FontStyle.kItalic_Slant if str(style).lower() in ("italic", "oblique") else skia.FontStyle.kUpright_Slant
-        font_style = skia.FontStyle(sk_weight, skia.FontStyle.kNormal_Width, sk_slant)
-        typeface = skia.Typeface('Times', font_style)
-        font = skia.Font(typeface, float(size))
-        FONTS[key] = font
-        return font
+
+        class _SkiaFont:
+            def __init__(self, size, weight, style):
+                sk_weight = 700 if str(weight).lower() in ("bold", "700") else 400
+                sk_slant = skia.FontStyle.kItalic_Slant if str(style).lower() in ("italic", "oblique") else skia.FontStyle.kUpright_Slant
+                sk_width = skia.FontStyle.kNormal_Width
+                fs = skia.FontStyle(sk_weight, sk_width, sk_slant)
+                # Let Skia pick a reasonable default family if this isn't available.
+                typeface = skia.Typeface.MakeFromName("Arial", fs) or skia.Typeface.MakeDefault()
+                self._font = skia.Font(typeface, float(size))
+
+            def measure(self, text: str) -> float:
+                return float(self._font.measureText(text, skia.TextEncoding.kUTF8))
+
+            def metrics(self, key=None):
+                m = self._font.getMetrics()
+                ascent = float(-m.fAscent)   # fAscent is negative in Skia
+                descent = float(m.fDescent)
+                leading = float(getattr(m, "fLeading", 0.0))
+                linespace = ascent + descent + leading
+                d = {"ascent": ascent, "descent": descent, "linespace": linespace}
+                return d if key is None else d[key]
+
+            @property
+            def skia_font(self):
+                return self._font
+
+        FONTS[key] = _SkiaFont(size, weight, style)
+        return FONTS[key]
     except Exception:
         pass
 
-    # Fallback to Tk fonts (only if someone runs the Tk browser).
-    import tkinter
     import tkinter.font
-    if not tkinter._default_root:
-        root = tkinter.Tk()
-        root.withdraw()
-    font = tkinter.font.Font(size=int(size), weight=weight, slant=style)
+    font = tkinter.font.Font(size=size, weight=weight, slant=style)
     FONTS[key] = font
     return font
-
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
@@ -2423,18 +2440,18 @@ class Browser:
             pass
 
     #  chrome actions 
-    def set_status(self, msg):
-        """Update UI status text if available.
-        In the SDL/Skia labs, Browser.__init__ is patched and no Tk widgets
-        are created; in that case we simply store the status string.
-        """
-        self.status_text = msg
-        status = getattr(self, "status", None)
-        try:
-            if status is not None:
-                status.config(text=msg)
-        except Exception:
-            pass
+        def set_status(self, msg):
+            """Update UI status text if available.
+            In the SDL/Skia labs, Browser.__init__ is patched and no Tk widgets
+            are created; in that case we simply store the status string.
+            """
+            self.status_text = msg
+            status = getattr(self, "status", None)
+            try:
+                if status is not None:
+                    status.config(text=msg)
+            except Exception:
+                pass
 
     def go_address(self):
         # blur page when switching to navigation via address bar
