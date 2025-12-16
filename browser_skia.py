@@ -130,25 +130,27 @@ class DrawRect:
 
 @tools.patch(DrawText)
 class DrawText:
-    def __init__(self, x1, y1, text, font, color):
-        self.rect = skia.Rect.MakeLTRB(
-            x1, y1,
-            x1 + font.measureText(text),
-            y1 - font.getMetrics().fAscent \
-                + font.getMetrics().fDescent)
-        self.font = font
+    def __init__(self, x, y, text, font, color):
+        self.x = x
+        self.y = y
         self.text = text
         self.color = color
 
+        # Unwrap our stable-font wrapper from browser.py
+        # (browser.get_font returns _SkiaFont with .skia_font)
+        if hasattr(font, "skia_font"):
+            self.font = font.skia_font
+        else:
+            self.font = font  # might already be skia.Font
+
+        # Build text blob using a real skia.Font
+        self.blob = skia.TextBlob.MakeFromText(self.text, self.font, skia.TextEncoding.kUTF8)
+        self.rect = self.blob.bounds().makeOffset(self.x, self.y)
+
     def execute(self, canvas):
-        paint = skia.Paint(
-            AntiAlias=True,
-            Color=parse_color(self.color),
-        )
-        baseline = self.rect.top() \
-            - self.font.getMetrics().fAscent
-        canvas.drawString(self.text, float(self.rect.left()),
-            baseline, self.font, paint)
+        paint = skia.Paint(AntiAlias=True, Color=parse_color(self.color))
+        canvas.drawTextBlob(self.blob, self.x, self.y, paint)
+
 
 @tools.patch(DrawOutline)
 class DrawOutline:
@@ -210,9 +212,8 @@ def paint_tree(layout_object, display_list):
 @tools.patch(BlockLayout)
 class BlockLayout:
     # IMPORTANT: Do NOT override word()/input() here.
-    # The core engine in browser.py implements inline layout and will call
-    # its own BlockLayout.word()/input(). Overriding them with the older
-    # "self.children[-1]" line-box model causes crashes.
+    # Your browser.py generates inline drawing into self.display_list.
+    # If you ignore display_list, the page renders blank.
 
     def self_rect(self):
         return skia.Rect.MakeLTRB(
@@ -222,22 +223,53 @@ class BlockLayout:
     def paint(self):
         cmds = []
 
-        bgcolor = self.node.style.get("background-color",
-                                 "transparent")
-
+        # Background (with optional border-radius)
+        bgcolor = self.node.style.get("background-color", "transparent")
         if bgcolor != "transparent":
-            radius = float(
-                self.node.style.get(
-                    "border-radius", "0px")[:-2])
-            cmds.append(DrawRRect(
-                self.self_rect(), radius, bgcolor))
+            try:
+                radius = float(self.node.style.get("border-radius", "0px")[:-2])
+            except Exception:
+                radius = 0.0
+            if radius:
+                cmds.append(DrawRRect(self.self_rect(), radius, bgcolor))
+            else:
+                cmds.append(DrawRect(self.self_rect(), bgcolor))
+
+        # Match book behavior for <pre>
+        if isinstance(self.node, Element) and self.node.tag == "pre":
+            cmds.append(DrawRect(self.self_rect(), "gray"))
+
+        # The REAL content: inline display list produced by browser.py
+        for item in getattr(self, "display_list", []):
+            tag = item[0] if isinstance(item, tuple) and item else None
+
+            if tag == "text_abs":
+                _, (x, y), word, font, color = item
+                cmds.append(DrawText(x, y, word, font, color))
+
+            elif tag == "rect":
+                _, (x1, y1, x2, y2), color = item
+                rect = skia.Rect.MakeLTRB(x1, y1, x2, y2)
+                cmds.append(DrawRect(rect, color))
+
+            elif tag == "outline":
+                _, (x1, y1, x2, y2), color, th = item
+                rect = skia.Rect.MakeLTRB(x1, y1, x2, y2)
+                cmds.append(DrawOutline(rect, color, th))
+
+            elif tag == "line":
+                _, (x1, y1, x2, y2, color, th) = item
+                cmds.append(DrawLine(x1, y1, x2, y2, color, th))
+
+            # Older format fallback: (x, y, word, font, color)
+            elif tag is None and len(item) == 5:
+                x, y, word, font, color = item
+                cmds.append(DrawText(x, y, word, font, color))
 
         return cmds
 
     def paint_effects(self, cmds):
-        cmds = paint_visual_effects(
-            self.node, cmds, self.self_rect())
-        return cmds
+        return paint_visual_effects(self.node, cmds, self.self_rect())
 
 @tools.patch(LineLayout)
 class LineLayout:
@@ -432,7 +464,7 @@ class Chrome:
             self.urlbar_bottom - self.padding)
 
         self.address_rect = skia.Rect.MakeLTRB(
-            self.back_rect.top() + self.padding,
+            self.back_rect.right() + self.padding,
             self.urlbar_top + self.padding,
             WIDTH - self.padding,
             self.urlbar_bottom - self.padding)
@@ -577,22 +609,74 @@ class Browser:
             self.ALPHA_MASK = 0xff000000
 
     def handle_click(self, e):
+        """
+        Handle mouse clicks. Left‑clicks perform normal browser actions (e.g.,
+        following links, focusing inputs) while right‑clicks copy the page’s
+        visible text to the system clipboard. This mirrors the Tkinter version
+        where a right‑click copied all visible text. The SDL_MouseButtonEvent
+        passed as ``e`` contains ``button`` (mouse button number), ``x`` and
+        ``y`` coordinates. Button 1 is left click; button 3 is right click.
+        """
+        # Right click copies visible page text to clipboard
+        if getattr(e, "button", 1) == 3:
+            # Copy all visible text to clipboard and return
+            self.copy_to_clipboard()
+            return
+        # Left click (or other buttons) perform default behavior
         if e.y < self.chrome.bottom:
+            # Click within the chrome area
             self.focus = None
             self.chrome.click(e.x, e.y)
             self.raster_chrome()
         else:
+            # Click within page content
             if self.focus != "content":
                 self.focus = "content"
                 self.chrome.blur()
                 self.raster_chrome()
+            # Adjust for scroll and dispatch click to current tab
             url = self.active_tab.url
             tab_y = e.y - self.chrome.bottom
             self.active_tab.click(e.x, tab_y)
             if self.active_tab.url != url:
+                # Navigated to a new page; re‑raster chrome to show new URL
                 self.raster_chrome()
+            # Always raster tab after clicking
             self.raster_tab()
+        # Redraw combined chrome + content
         self.draw()
+
+    def copy_to_clipboard(self):
+        """
+        Copy all visible text on the current page to the system clipboard.
+        This gathers the text from the DOM tree (excluding script and style
+        elements) and uses SDL_SetClipboardText to place the text on the
+        clipboard. On platforms where SDL_SetClipboardText is unsupported,
+        this call safely no‑ops. Press Ctrl+C or right‑click anywhere on the
+        page to trigger this function.
+        """
+        # Collect visible text by traversing the DOM tree
+        texts = []
+        def traverse(node):
+            # Skip script/style tags entirely
+            if isinstance(node, Text):
+                texts.append(node.text)
+            elif isinstance(node, Element):
+                tag = node.tag if hasattr(node, "tag") else None
+                if tag not in ("script", "style"):
+                    for child in getattr(node, "children", []):
+                        traverse(child)
+        # If there is no active tab or document, do nothing
+        if not self.active_tab or not getattr(self.active_tab, "nodes", None):
+            return
+        traverse(self.active_tab.nodes)
+        plain_text = " ".join(texts)
+        # Use SDL to put text on the clipboard
+        try:
+            sdl2.SDL_SetClipboardText(plain_text.encode("utf-8"))
+        except Exception:
+            # If SDL clipboard API is unavailable, silently ignore
+            pass
 
     def handle_key(self, char):
         if not (0x20 <= ord(char) < 0x7f): return
@@ -702,7 +786,11 @@ def mainloop(browser):
             elif event.type == sdl2.SDL_MOUSEBUTTONUP:
                 browser.handle_click(event.button)
             elif event.type == sdl2.SDL_KEYDOWN:
-                if event.key.keysym.sym == sdl2.SDLK_RETURN:
+                # Intercept Ctrl/Cmd+C to copy page text to clipboard
+                if (event.key.keysym.sym == sdl2.SDLK_c and
+                    (event.key.keysym.mod & (sdl2.KMOD_CTRL | sdl2.KMOD_GUI))):
+                    browser.copy_to_clipboard()
+                elif event.key.keysym.sym == sdl2.SDLK_RETURN:
                     browser.handle_enter()
                 elif event.key.keysym.sym == sdl2.SDLK_DOWN:
                     browser.handle_down()
