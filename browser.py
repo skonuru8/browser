@@ -2396,7 +2396,19 @@ class Browser:
             pass
 
     #  chrome actions 
-    def set_status(self, msg): self.status.config(text=msg)
+    def set_status(self, msg):
+        """Update UI status text if available.
+
+        In the SDL/Skia labs, Browser.__init__ is patched and no Tk widgets
+        are created; in that case we simply store the status string.
+        """
+        self.status_text = msg
+        status = getattr(self, "status", None)
+        try:
+            if status is not None:
+                status.config(text=msg)
+        except Exception:
+            pass
 
     def go_address(self):
         # blur page when switching to navigation via address bar
