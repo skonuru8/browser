@@ -1,4 +1,3 @@
-# browser_chrome_tabs_api.py
 import socket, ssl, sys, urllib.parse, tkinter, tkinter.font
 import time
 import email.utils
@@ -1829,15 +1828,37 @@ class Tab:
             self.js.update_ids()
         # Update address bar and tab UI
         if self is self.browser.current_tab():
-            self.browser.address.delete(0, "end")
-            self.browser.address.insert(0, str(url))
-            # Update padlock icon
-            try:
-                self.browser.update_padlock()
-            except Exception:
-                pass
-            self.browser.draw()
-            self.browser.refresh_tab_strip()
+            # Update address bar / UI if present (tkinter version). In the SDL/Skia
+            # version there is no tkinter Entry, so just store the URL string.
+            if hasattr(self.browser, "address") and self.browser.address is not None:
+                try:
+                    self.browser.address.delete(0, "end")
+                    self.browser.address.insert(0, str(url))
+                except Exception:
+                    pass
+            else:
+                self.browser.current_url = str(url)
+
+            # Update padlock icon (tkinter version only)
+            if hasattr(self.browser, "update_padlock"):
+                try:
+                    self.browser.update_padlock()
+                except Exception:
+                    pass
+
+            # Trigger a redraw if the embedding Browser provides it
+            if hasattr(self.browser, "draw"):
+                try:
+                    self.browser.draw()
+                except Exception:
+                    pass
+
+            # Optional: refresh tab strip if present
+            if hasattr(self.browser, "refresh_tab_strip"):
+                try:
+                    self.browser.refresh_tab_strip()
+                except Exception:
+                    pass
 
     def render(self):
         Browser._clear_widget_boxes()
