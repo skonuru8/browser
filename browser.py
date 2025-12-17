@@ -1,3 +1,4 @@
+# browser_chrome_tabs_api.py
 import socket, ssl, sys, urllib.parse, tkinter, tkinter.font
 import time
 import email.utils
@@ -485,56 +486,12 @@ DEFAULT_STYLE_SHEET = [
 #  Fonts & layout 
 FONTS = {}
 def get_font(size, weight, style):
-    """Return a font object with a stable API across backends.
-
-    The layout engine expects:
-      - font.measure(text) -> width in px
-      - font.metrics(key) -> ascent/descent/linespace (px)
-      - font.metrics() -> dict with those keys
-    """
     key = (size, weight, style)
-    if key in FONTS:
-        return FONTS[key]
-
-    # Prefer Skia fonts (Lab 11 SDL/Skia). Fall back to Tk fonts if present.
-    try:
-        import skia
-
-        class _SkiaFont:
-            def __init__(self, size, weight, style):
-                sk_weight = 700 if str(weight).lower() in ("bold", "700") else 400
-                sk_slant = skia.FontStyle.kItalic_Slant if str(style).lower() in ("italic", "oblique") else skia.FontStyle.kUpright_Slant
-                sk_width = skia.FontStyle.kNormal_Width
-                fs = skia.FontStyle(sk_weight, sk_width, sk_slant)
-                # Let Skia pick a reasonable default family if this isn't available.
-                typeface = skia.Typeface.MakeFromName("Arial", fs) or skia.Typeface.MakeDefault()
-                self._font = skia.Font(typeface, float(size))
-
-            def measure(self, text: str) -> float:
-                return float(self._font.measureText(text, skia.TextEncoding.kUTF8))
-
-            def metrics(self, key=None):
-                m = self._font.getMetrics()
-                ascent = float(-m.fAscent)   # fAscent is negative in Skia
-                descent = float(m.fDescent)
-                leading = float(getattr(m, "fLeading", 0.0))
-                linespace = ascent + descent + leading
-                d = {"ascent": ascent, "descent": descent, "linespace": linespace}
-                return d if key is None else d[key]
-
-            @property
-            def skia_font(self):
-                return self._font
-
-        FONTS[key] = _SkiaFont(size, weight, style)
-        return FONTS[key]
-    except Exception:
-        pass
-
-    import tkinter.font
-    font = tkinter.font.Font(size=size, weight=weight, slant=style)
-    FONTS[key] = font
-    return font
+    if key not in FONTS:
+        font = tkinter.font.Font(size=size, weight=weight, slant=style)
+        label = tkinter.Label(font=font)
+        FONTS[key] = (font, label)
+    return FONTS[key][0]
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
@@ -1828,37 +1785,15 @@ class Tab:
             self.js.update_ids()
         # Update address bar and tab UI
         if self is self.browser.current_tab():
-            # Update address bar / UI if present (tkinter version). In the SDL/Skia
-            # version there is no tkinter Entry, so just store the URL string.
-            if hasattr(self.browser, "address") and self.browser.address is not None:
-                try:
-                    self.browser.address.delete(0, "end")
-                    self.browser.address.insert(0, str(url))
-                except Exception:
-                    pass
-            else:
-                self.browser.current_url = str(url)
-
-            # Update padlock icon (tkinter version only)
-            if hasattr(self.browser, "update_padlock"):
-                try:
-                    self.browser.update_padlock()
-                except Exception:
-                    pass
-
-            # Trigger a redraw if the embedding Browser provides it
-            if hasattr(self.browser, "draw"):
-                try:
-                    self.browser.draw()
-                except Exception:
-                    pass
-
-            # Optional: refresh tab strip if present
-            if hasattr(self.browser, "refresh_tab_strip"):
-                try:
-                    self.browser.refresh_tab_strip()
-                except Exception:
-                    pass
+            self.browser.address.delete(0, "end")
+            self.browser.address.insert(0, str(url))
+            # Update padlock icon
+            try:
+                self.browser.update_padlock()
+            except Exception:
+                pass
+            self.browser.draw()
+            self.browser.refresh_tab_strip()
 
     def render(self):
         Browser._clear_widget_boxes()
@@ -2461,18 +2396,7 @@ class Browser:
             pass
 
     #  chrome actions 
-        def set_status(self, msg):
-            """Update UI status text if available.
-            In the SDL/Skia labs, Browser.__init__ is patched and no Tk widgets
-            are created; in that case we simply store the status string.
-            """
-            self.status_text = msg
-            status = getattr(self, "status", None)
-            try:
-                if status is not None:
-                    status.config(text=msg)
-            except Exception:
-                pass
+    def set_status(self, msg): self.status.config(text=msg)
 
     def go_address(self):
         # blur page when switching to navigation via address bar
