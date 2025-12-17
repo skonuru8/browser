@@ -32,7 +32,11 @@ import ssl
 import time
 import email.utils
 from typing import Any, Dict, List, Optional
+import os
 
+import pandas as pd
+
+from . import stats
 from .networking import URL, COOKIE_JAR
 from .dom import Text, Element, HTMLParser, tree_to_list
 from .css import (
@@ -70,6 +74,18 @@ class Tab:
         # History stack: each entry is a dict with keys url/method/body
         self.history: List[Dict[str, Any]] = []
         self.history_index: int = -1
+        
+        # --- PANDAS HISTORY START ---
+        self.history_file = "browser_history.csv"
+        if os.path.exists(self.history_file):
+            try:
+                self.history_df = pd.read_csv(self.history_file)
+            except Exception:
+                self.history_df = pd.DataFrame(columns=["url", "timestamp", "method"])
+        else:
+            self.history_df = pd.DataFrame(columns=["url", "timestamp", "method"])
+        # --- PANDAS HISTORY END ---
+
         # DOM and layout state
         self.nodes: Any = None
         self.document: Optional[DocumentLayout] = None
@@ -102,6 +118,21 @@ class Tab:
         if self.history_index + 1 < len(self.history):
             self.history = self.history[: self.history_index + 1]
         self.history.append({"url": url, "method": method, "body": body})
+
+        # --- PANDAS HISTORY LOG START ---
+        try:
+            new_entry = {
+                "url": str(url),
+                "timestamp": time.time(),
+                "method": method
+            }
+            self.history_df.loc[len(self.history_df)] = new_entry
+            self.history_df.to_csv(self.history_file, index=False)
+        except Exception as e:
+            print(f"Error saving history: {e}")
+        # --- PANDAS HISTORY LOG END ---
+
+
         self.history_index += 1
         # Perform the load with POST body if method is POST
         self.load(url, payload=(body if method == "POST" else None))
@@ -636,6 +667,8 @@ class Browser:
         bind_combo("w", lambda e: self.close_tab(self.active_tab_index))
         # Focus address bar: Ctrl/Cmd+L
         bind_combo("l", lambda e: (self.address.focus_set(), self.address.selection_range(0, "end")))
+        # Show history stats: Ctrl/Cmd+S
+        bind_combo("s", lambda e: stats.show_history_stats())
         # Next/prev tab bindings
         def next_tab(e=None):
             if self.tabs:
