@@ -55,6 +55,7 @@ class URL:
         referrer: Optional[str] = None,
         payload: Optional[str] = None,
         origin: Optional[str] = None,
+        max_redirects: int = 5,
     ) -> Tuple[Dict[str, str], str]:
         """Make an HTTP or HTTPS request to this URL.
 
@@ -62,6 +63,7 @@ class URL:
         :param payload: If provided, sends a POST with this body;
                         otherwise a GET request is made.
         :param origin: The Origin header value for CORS requests.
+        :param max_redirects: Maximum number of redirects to follow.
         :returns: A tuple of (headers dict, body string).
         :raises ssl.SSLError: If SSL/TLS handshake fails.
         :raises Exception: For other network errors.
@@ -139,8 +141,11 @@ class URL:
         sock.send(req.encode("utf8"))
         # Read response
         resp = sock.makefile("r", encoding="utf8", newline="\r\n")
-        # Skip status line
-        _ = resp.readline()
+        
+        # Read status line to check for redirects
+        statusline = resp.readline()
+        version, status, explanation = statusline.split(" ", 2)
+        
         headers: Dict[str, str] = {}
         while True:
             line = resp.readline()
@@ -155,9 +160,21 @@ class URL:
                 headers[k_lower] += ", " + v
             else:
                 headers[k_lower] = v
+        
+        # Handle Redirects (3xx)
+        if status in ["301", "302", "303", "307", "308"] and "location" in headers and max_redirects > 0:
+            location = headers["location"]
+            sock.close()
+            # Resolve relative redirects
+            new_url = self.resolve(location)
+            # Recursively follow the redirect
+            # Note: Browsers typically switch to GET for 301/302/303, so we pass payload=None
+            return new_url.request(referrer, payload=None, origin=origin, max_redirects=max_redirects - 1)
+
         # Body: no transfer encoding expected
         body = resp.read()
         sock.close()
+        
         # Store cookies from Set-Cookie header
         sc = headers.get("set-cookie")
         if sc:
