@@ -9,7 +9,7 @@
 
 ---
 
-## Setup Instructions (5 Steps)
+## Setup Instructions
 
 
 1. **Create and activate a virtual environment (optional)**
