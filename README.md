@@ -77,7 +77,7 @@ pip install pandas matplotlib dukpy pytest
 ## How to Run the Program
 
 ### Main Entry Point (Required)
-Open `main.ipynb` and run the first cell:
+Open `browser_notebook.ipynb` and run the first cell:
 
 ```python
 from browser.browser import Browser
