@@ -63,6 +63,8 @@ README.md
 
 ## Setup Instructions
 
+- Clone the project or download it (choose the main branch)
+
 ### Requirements
 - **Python 3.12 or 3.13**
 - Required libraries:
