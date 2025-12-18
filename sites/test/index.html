@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Local Test Site — No Storage</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">No‑Storage Test Site</div>
+    <nav class="nav">
+      <a class="active" href="index.html">Home</a>
+      <a href="gallery.html">Gallery</a>
+      <a href="form.html">Form</a>
+      <a href="long.html">Long Page</a>
+    </nav>
+  </header>
+
+  <main class="container grid">
+    <section class="card">
+      <h1>Browser Feature Test (No localStorage)</h1>
+      <p class="muted">
+        This mini site is designed to test your Python browser without using
+        <b>localStorage</b>, cookies, or external assets.
+      </p>
+      <ul class="muted">
+        <li>Multi-page navigation with relative links</li>
+        <li>CSS layout (cards, grid, nav, buttons)</li>
+        <li>Forms (input, textarea, select)</li>
+        <li>JavaScript that only manipulates the DOM (no persistence)</li>
+        <li>Scrolling on a long page</li>
+      </ul>
+      <div class="row">
+        <a class="btn" href="form.html">Try the form</a>
+        <a class="btn ghost" href="long.html">Test scrolling</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Live JavaScript test</h2>
+      <p class="muted">Click the button to update the page (no storage used).</p>
+      <div class="row">
+        <button id="jsBtn" class="btn">Click me</button>
+        <div id="jsOut" class="pill">Not clicked yet</div>
+      </div>
+      <p class="muted small">If JS isn’t supported in your browser yet, everything else still renders.</p>
+    </section>
+
+    <section class="card">
+      <h2>Quick checklist</h2>
+      <ol class="muted">
+        <li>Open <b>Gallery</b> and confirm images render (SVG).</li>
+        <li>Open <b>Form</b> and type into fields.</li>
+        <li>Open <b>Long Page</b> and scroll smoothly.</li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>Offline-friendly</h2>
+      <p class="muted">
+        All assets are local: HTML + CSS + SVG images and a small JS file.
+        No network requests except the local server.
+      </p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Static test site • no persistence</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

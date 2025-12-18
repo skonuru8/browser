@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>No‑Storage Test — Form</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">No‑Storage Test Site</div>
+    <nav class="nav">
+      <a href="index.html">Home</a>
+      <a href="gallery.html">Gallery</a>
+      <a class="active" href="form.html">Form</a>
+      <a href="long.html">Long Page</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h1>Form Test</h1>
+      <p class="muted">This form does not submit anywhere. JS will show your inputs below (no storage).</p>
+
+      <form id="demoForm">
+        <div class="row">
+          <label class="field">
+            <span>Name</span>
+            <input id="name" class="input" placeholder="Type here..."/>
+          </label>
+          <label class="field">
+            <span>Priority</span>
+            <select id="priority" class="input">
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Notes</span>
+          <textarea id="notes" class="textarea" rows="6" placeholder="Long text should wrap properly..."></textarea>
+        </label>
+
+        <div class="row">
+          <button class="btn" type="submit">Preview</button>
+          <button class="btn ghost" type="reset">Reset</button>
+        </div>
+      </form>
+
+      <h2>Preview Output</h2>
+      <pre id="preview" class="code">(submit the form to see output)</pre>
+    </section>
+  </main>
+
+  <footer class="footer"><a href="index.html">← Back</a></footer>
+  <script src="app.js"></script>
+</body>
+</html>

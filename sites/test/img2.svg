@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420">
+  <rect width="640" height="420" rx="28" fill="#121a2e"/>
+  <circle cx="190" cy="170" r="110" fill="#2b6cff" opacity="0.35"/>
+  <circle cx="310" cy="210" r="130" fill="#00d4ff" opacity="0.22"/>
+  <circle cx="420" cy="150" r="90" fill="#ff3b5c" opacity="0.18"/>
+  <text x="40" y="310" font-family="Arial, sans-serif" font-size="28" fill="#eef2ff" font-weight="700">SVG Card 2</text>
+  <text x="40" y="346" font-family="Arial, sans-serif" font-size="16" fill="#aab6d6">Shapes + transparency</text>
+</svg>
