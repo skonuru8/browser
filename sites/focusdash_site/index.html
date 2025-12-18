@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FocusDash — Daily Planner</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⏱️</span>
+      <div>
+        <div class="title">FocusDash</div>
+        <div class="subtitle">a simple daily planner + timer</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="index.html" class="active">Dashboard</a>
+      <a href="projects.html">Projects</a>
+      <a href="habits.html">Habits</a>
+      <a href="help.html">Help</a>
+    </nav>
+  </header>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Today</h2>
+      <div class="row">
+        <div class="kpi">
+          <div class="kpi-label">Date</div>
+          <div id="todayDate" class="kpi-value">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Planned focus</div>
+          <div id="plannedMinutes" class="kpi-value">0 min</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Completed</div>
+          <div id="completedMinutes" class="kpi-value">0 min</div>
+        </div>
+      </div>
+      <p class="muted">Tip: This site uses only HTML/CSS/JS. Data is stored in <b>localStorage</b> (if your browser supports it).</p>
+    </section>
+
+    <section class="card">
+      <h2>Pomodoro Timer</h2>
+      <div class="timer">
+        <div id="timerLabel" class="timer-label">Focus</div>
+        <div id="timerDisplay" class="timer-display">25:00</div>
+        <div class="timer-controls">
+          <button id="startBtn">Start</button>
+          <button id="pauseBtn" class="secondary">Pause</button>
+          <button id="resetBtn" class="secondary">Reset</button>
+        </div>
+        <div class="row">
+          <label class="field">
+            <span>Focus (min)</span>
+            <input id="focusMin" type="number" min="5" max="90" value="25"/>
+          </label>
+          <label class="field">
+            <span>Break (min)</span>
+            <input id="breakMin" type="number" min="1" max="30" value="5"/>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Top 3 Tasks</h2>
+      <div class="row">
+        <input id="taskInput" class="text" placeholder="Add a task (e.g., Finish README)"/>
+        <button id="addTaskBtn">Add</button>
+      </div>
+      <ul id="taskList" class="list"></ul>
+      <div class="row">
+        <button id="clearDoneBtn" class="secondary">Clear completed</button>
+        <button id="wipeAllBtn" class="danger">Wipe all</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Quick Links</h2>
+      <div class="links">
+        <a class="linkcard" href="projects.html">
+          <div class="linktitle">Projects</div>
+          <div class="muted">Track milestones + notes</div>
+        </a>
+        <a class="linkcard" href="habits.html">
+          <div class="linktitle">Habits</div>
+          <div class="muted">Simple streak tracker</div>
+        </a>
+        <a class="linkcard" href="help.html">
+          <div class="linktitle">Help</div>
+          <div class="muted">How to use this site</div>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>FocusDash • static demo site</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

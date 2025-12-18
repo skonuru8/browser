@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>FocusDash — Habits</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⏱️</span>
+      <div>
+        <div class="title">FocusDash</div>
+        <div class="subtitle">habit streak tracker</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="index.html">Dashboard</a>
+      <a href="projects.html">Projects</a>
+      <a href="habits.html" class="active">Habits</a>
+      <a href="help.html">Help</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="card">
+      <h2>Habits</h2>
+      <p class="muted">Add habits. Click “Done today” to build a streak.</p>
+      <div class="row">
+        <input id="habitName" class="text" placeholder="Habit (e.g., Workout, Read 20 min)"/>
+        <button id="addHabitBtn">Add</button>
+      </div>
+      <div id="habitsWrap" class="habits"></div>
+    </section>
+  </main>
+
+  <footer class="footer"><a href="index.html">← Back to Dashboard</a></footer>
+  <script src="app.js"></script>
+</body>
+</html>
