@@ -38,4 +38,4 @@
 ## Notes
 - `browser_skia_base.py` is the stable rendering base  
 - `browser_final.py` is the final runnable file  
-- This project is for learning purposes only
+- This project is work in progress and is incomplete, the architecture choices and various changes in this branch (skia version) are influenced by browser engineering and other resources
