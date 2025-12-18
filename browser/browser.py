@@ -767,7 +767,7 @@ class Browser:
                 relief="sunken" if i == self.active_tab_index else "raised",
             )
             b.pack(side="left", padx=(2, 2), pady=2)
-            xbtn = tkinter.Button(cell, text="×", width=2, command=lambda j=i: self.close_tab(j))
+            xbtn = tkinter.Button(cell, text="x", width=2, command=lambda j=i: self.close_tab(j))
             xbtn.pack(side="left", padx=(2, 4), pady=2)
             cell.pack(side="left")
         plus = tkinter.Button(self.tabbar, text="+", width=3, command=lambda: self.new_tab(URL("https://example.org/")))
